@@ -2,40 +2,56 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from zgraph import ConstantNode, FactorNode, ProductNode
+from zgraph import BaseNode, ConstantNode, ProductNode, ZMatMulNode, ZNode
 
 
-def test_factor_node_matches_expected_logsumexp():
-    node = FactorNode(
+def test_znode_matches_expected_logsumexp():
+    node = ZNode(
         M_matrix=jnp.array([[1.0, 0.0], [0.0, 1.0]]),
         subgraph_list=[ConstantNode(1.0), ConstantNode(2.0)],
         tau=1.0,
     )
 
+    assert isinstance(node, BaseNode)
     result = node(jnp.array([0.0]))
     expected = jax.scipy.special.logsumexp(jnp.array([1.0, 2.0]), axis=-1)
 
     assert jnp.allclose(result, expected, atol=1e-6)
 
 
-def test_factor_node_rejects_dimension_mismatch():
+def test_znode_branch_potentials_matches_logits_alias():
+    node = ZNode(
+        M_matrix=jnp.array([[1.0, 0.0], [0.0, 1.0]]),
+        subgraph_list=[ConstantNode(1.5), ConstantNode(-0.5)],
+        tau=2.0,
+        g=jnp.array([0.3, -0.2]),
+    )
+    signals = jnp.array([0.0])
+    bp = node.branch_potentials(signals)
+    expected = jnp.array([1.5 + 2.0 * 0.3, -0.5 + 2.0 * (-0.2)])
+
+    assert jnp.allclose(bp, expected, atol=1e-6)
+    assert jnp.allclose(node.logits(signals), bp, atol=1e-6)
+
+
+def test_znode_rejects_dimension_mismatch():
     with pytest.raises(ValueError, match="Dimension mismatch"):
-        FactorNode(
+        ZNode(
             M_matrix=jnp.array([[1.0, 0.0], [0.0, 1.0]]),
             subgraph_list=[ConstantNode(1.0)],
         )
 
 
-def test_factor_node_rejects_non_2d_matrix_after_normalization():
+def test_znode_rejects_non_2d_matrix_after_normalization():
     with pytest.raises(ValueError, match="must be a 2D tensor"):
-        FactorNode(
+        ZNode(
             M_matrix=jnp.ones((2, 2, 2)),
             subgraph_list=[ConstantNode(1.0), ConstantNode(2.0)],
         )
 
 
-def test_factor_node_accepts_1d_matrix_by_unsqueezing():
-    node = FactorNode(
+def test_znode_accepts_1d_matrix_by_unsqueezing():
+    node = ZNode(
         M_matrix=jnp.array([1.0, 1.0]),
         subgraph_list=[ConstantNode(1.5), ConstantNode(0.5)],
         tau=1.0,
@@ -47,17 +63,17 @@ def test_factor_node_accepts_1d_matrix_by_unsqueezing():
     assert jnp.allclose(result, expected, atol=1e-6)
 
 
-def test_factor_node_rejects_invalid_tau_type():
+def test_znode_rejects_invalid_tau_type():
     with pytest.raises(TypeError, match="tau must be"):
-        FactorNode(
+        ZNode(
             M_matrix=jnp.array([[1.0]]),
             subgraph_list=[ConstantNode(1.0)],
             tau="invalid",
         )
 
 
-def test_factor_node_exact_zero_tau_limit():
-    node = FactorNode(
+def test_znode_exact_zero_tau_limit():
+    node = ZNode(
         M_matrix=jnp.array([[1.0, 0.0], [0.0, 1.0]]),
         subgraph_list=[ConstantNode(0.0), ConstantNode(0.0)],
         tau=0.0,
@@ -68,6 +84,21 @@ def test_factor_node_exact_zero_tau_limit():
 
     assert jnp.isfinite(result)
     assert jnp.allclose(result, expected, atol=1e-10)
+
+
+def test_zmatmul_node_contracts_soft_tropically():
+    A = jnp.array([[1.0, 2.0], [0.0, -1.0]])
+    B = jnp.array([[0.5, -0.5], [1.5, 2.0]])
+    tau = 1.5
+    node = ZMatMulNode(ConstantNode(A), ConstantNode(B), tau=tau)
+
+    result = node(jnp.array([0.0]))
+    expected = tau * jax.scipy.special.logsumexp(
+        (A[:, :, None] + B[None, :, :]) / tau,
+        axis=1,
+    )
+    assert result.shape == (2, 2)
+    assert jnp.allclose(result, expected, atol=1e-6)
 
 
 def test_product_node_multiplies_subgraph_outputs():

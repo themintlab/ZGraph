@@ -1,7 +1,7 @@
-from .base import ZGraphNode, Ensemble
-from .tropical_nodes import (
-    TropicalPolynomialNode,
-    TropicalMatMulNode,
+from .base import BaseNode, Ensemble
+from .znodes import (
+    ZNode,
+    ZMatMulNode,
 )
 from .utility_nodes import PiecewiseNode, StandardProductNode
 from .leaf_nodes import ConstantNode, SignalNode, SignalNodes
@@ -9,10 +9,8 @@ from .functional import marginalize
 
 import jax.numpy as jnp
 
-# Convenience Aliases for standard probability/math naming
-FactorNode = TropicalPolynomialNode
+# Convenience Alias for standard non-tropical multiplication
 ProductNode = StandardProductNode
-MatMulNode = TropicalMatMulNode
 
 
 def AdditionNode(subgraph_list, weights=None):
@@ -21,11 +19,11 @@ def AdditionNode(subgraph_list, weights=None):
     elif not (isinstance(weights, jnp.ndarray) and jnp.issubdtype(weights.dtype, jnp.floating)):
         weights = jnp.asarray(weights, dtype=float)
     M = jnp.expand_dims(weights, 0)
-    return TropicalPolynomialNode(M_matrix=M, subgraph_list=subgraph_list)
+    return ZNode(M_matrix=M, subgraph_list=subgraph_list)
 
 
 def DivisionNode(numerator, denominator):
-    return TropicalPolynomialNode(
+    return ZNode(
         M_matrix=jnp.asarray([[1.0, -1.0]], dtype=float),
         subgraph_list=[numerator, denominator],
     )
@@ -50,16 +48,14 @@ def TropicalIdentityNode():
 
 
 __all__ = [
-    "ZGraphNode",
+    "BaseNode",
     "Ensemble",
-    "FactorNode",
+    "ZNode",
+    "ZMatMulNode",
     "ProductNode",
     "AdditionNode",
     "DivisionNode",
-    "MatMulNode",
-    "TropicalPolynomialNode",
     "StandardProductNode",
-    "TropicalMatMulNode",
     "TropicalZeroNode",
     "TropicalIdentityNode",
     "PiecewiseNode",

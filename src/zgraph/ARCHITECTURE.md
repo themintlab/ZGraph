@@ -16,12 +16,12 @@ To ensure speed and portability across platforms and hardware architectures, all
 The `zgraph` codebase is strictly divided into three distinct categories based on their mathematical role:
 
 1. **`core/` (The Soft-Tropical Forward Pass)**
-   Contains the structural math primitives (`FactorNode`, `ProductNode`, `marginalize`) defining the graphical model:
+   Contains the structural math primitives (`ZNode`, `ZMatMulNode`, `ProductNode`, `marginalize`) defining the graphical model:
    $$z^+(\mathbf{z}) = \tau \, \text{LSE}\!\left(\tau^{-1} M \mathbf{z} + \boldsymbol{g}\right)$$
-   Executes a zero-scale-safe ($\tau \to 0^+$) shifted-`LSE` `evaluate()` pass (wrapped by `__call__()`)—with compile-time linear bypass for $K = 1$ and horizontal operator fusion (`+`, `-`, `*`, `|`)—exposing the scalar potential $z^+$, uncollapsed branch potentials $z_i^+ + \tau g_i$ (`.logits()`), and simplex probabilities $\mathbf{p}$ (`.probabilities()`).
+   Executes a zero-scale-safe ($\tau \to 0^+$) shifted-`LSE` `evaluate()` pass (wrapped by `__call__()`)—with compile-time linear bypass for $K = 1$ and horizontal operator fusion (`+`, `-`, `*`, `|`)—exposing the scalar potential $z^+$, uncollapsed branch potentials $z_i^+ + \tau g_i$ (`.branch_potentials()`, aliased as `.logits()`), and simplex probabilities $\mathbf{p}$ (`.probabilities()`).
 
 2. **`transforms/` (Graph-to-Graph Operators)**
-   Contains functional operators (`legendre_transform`, `legendre_dual`) that reshape coordinates and return a *new* `ZGraphNode` graph:
+   Contains functional operators (`legendre_transform`, `legendre_dual`) that reshape coordinates and return a *new* `BaseNode` graph:
    - `legendre_transform`: Forward parametric Legendre-Fenchel transform evaluating $z^*(\mathbf{n}) = \mathbf{z}^T \mathbf{n} - z^+(\mathbf{z})$ and dual marginals $\mathbf{n} = \nabla_{\mathbf{z}} z^+$.
    - `legendre_dual`: Inverse Legendre-Fenchel node wrapping `legendre_solve` to evaluate $z^*(\mathbf{n}) = \sup_{\mathbf{z}} \{\mathbf{z}^T \mathbf{n} - z^+(\mathbf{z})\}$ at target marginals $\mathbf{n}$.
 
@@ -42,7 +42,7 @@ To prevent breaking JAX/Equinox native `vmap` and `jax.jit` compatibility, all c
    - *Reason:* `jax.jit` requires strict static typing. Dictionaries or string parsing cause graph breaks and kernel compilation failures. All domain knowledge (names, metadata) must remain in the application layer.
 
 2. **Structural Immutability:**
-   `zgraph` routing nodes (e.g., `FactorNode`) are structurally immutable after creation. You may **NOT** include methods that mutate the underlying `list` or `tuple` (within `eqx.Module`) or swap subgraphs in-place (e.g., `self.subgraphs[2] = new_model`).
+   `zgraph` routing nodes (e.g., `ZNode`) are structurally immutable after creation. You may **NOT** include methods that mutate the underlying `list` or `tuple` (within `eqx.Module`) or swap subgraphs in-place (e.g., `self.subgraphs[2] = new_model`).
    - *Reason:* Swapping nodes in-place corrupts JAX's tracer graph and invalidates fused XLA kernels.
 
 3. **GPU & Device Management (The Buffer Rule):**
@@ -61,12 +61,12 @@ To prevent breaking JAX/Equinox native `vmap` and `jax.jit` compatibility, all c
 
 ---
 
-## 4. The Functor Pattern (`ZGraphNode`)
+## 4. The Functor Pattern (`BaseNode`)
 
-To maximize both code readability and hardware performance, `zgraph` implements a strict Template Method design pattern via the `ZGraphNode` base class.
+To maximize both code readability and hardware performance, `zgraph` implements a strict Template Method design pattern via the `BaseNode` base class.
 
-* **Pristine Subclasses:** Subclasses (`FactorNode`, `ProductNode`, `LegendreTransform`, `LegendreDualNode`) must NEVER implement `__call__`. Instead, they implement their pure, unvectorized scalar mathematical logic inside `evaluate(self, signals)`.
-* **The Interceptor:** The `ZGraphNode` base class takes absolute ownership of `__call__`. When a user evaluates `system(signals)`, the base class automatically intercepts the execution, detects batch dimensions or uncertainty parameters (`Ensemble`), constructs the necessary JAX masks, wraps `evaluate` in `jax.vmap` and `eqx.filter_vmap`, and executes the hardware-optimized kernel.
+* **Pristine Subclasses:** Subclasses (`ZNode`, `ZMatMulNode`, `ProductNode`, `LegendreTransform`, `LegendreDualNode`) must NEVER implement `__call__`. Instead, they implement their pure, unvectorized scalar mathematical logic inside `evaluate(self, signals)`.
+* **The Interceptor:** The `BaseNode` base class takes absolute ownership of `__call__`. When a user evaluates `system(signals)`, the base class automatically intercepts the execution, detects batch dimensions or uncertainty parameters (`Ensemble`), constructs the necessary JAX masks, wraps `evaluate` in `jax.vmap` and `eqx.filter_vmap`, and executes the hardware-optimized kernel.
 
 ## 5. Universal Uncertainty Quantification (UQ)
 
@@ -79,5 +79,5 @@ To distinguish parameter uncertainty distributions from vector constants (such a
 * The `__call__` interceptor recursively scans the PyTree for `Ensemble` objects and dynamically unwraps them inside `eqx.filter_vmap` before passing raw arrays into the pure `evaluate` method.
 
 ### The `.ensemble` BatchProxy
-For secondary node methods (such as `.logits(signals)` or `.probabilities(signals)`), the base class provides a `BatchProxy` via the `.ensemble` property:
-* **Usage:** `system.ensemble.logits(signals)`
+For secondary node methods (such as `.branch_potentials(signals)`, `.logits(signals)`, or `.probabilities(signals)`), the base class provides a `BatchProxy` via the `.ensemble` property:
+* **Usage:** `system.ensemble.branch_potentials(signals)`

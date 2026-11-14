@@ -17,21 +17,21 @@ This document tracks open architectural design questions and deferred benchmark 
 - **Decision Needed:** Whether to add `refine: bool = True` to `extract_decision_boundary` and/or expose a standalone `project_to_boundary` solver.
 
 ### 2. Vector `SignalNode` vs. Direct Vector Evaluation (`subgraph_list=None`)
-- **Files:** `src/zgraph/core/leaf_nodes.py`, `src/zgraph/core/tropical_nodes.py`
-- **Context:** Constructing a leaf `FactorNode` over an $N$-dimensional input vector $\mathbf{z}$ currently requires creating $N$ scalar `SignalNode(0), ..., SignalNode(N-1)` objects, and `TropicalPolynomialNode.logits` evaluates `[subgraph(signals) for subgraph in self.subgraphs]` followed by `jnp.stack`.
+- **Files:** `src/zgraph/core/leaf_nodes.py`, `src/zgraph/core/znodes.py`
+- **Context:** Constructing a leaf `ZNode` over an $N$-dimensional input vector $\mathbf{z}$ currently requires creating $N$ scalar `SignalNode(0), ..., SignalNode(N-1)` objects, and `ZNode.branch_potentials` evaluates `[subgraph(signals) for subgraph in self.subgraphs]` followed by `jnp.stack`.
 - **Options to Discuss:**
   - **Option A:** Allow `SignalNode` to accept a slice or index list so a single leaf node can pass a vector slice.
-  - **Option B:** Allow `subgraph_list=None` on `FactorNode(M_matrix)`, directly evaluating `self.M @ signals` without `SignalNode` wrappers.
+  - **Option B:** Allow `subgraph_list=None` on `ZNode(M_matrix)`, directly evaluating `self.M @ signals` without `SignalNode` wrappers.
   - **Option C:** Support both or retain explicit scalar `SignalNodes`.
 
 ### 3. Constrained Parameterization Wrappers for Training
 - **Context:** During gradient-based parameter estimation (e.g., with Optax), general Difference-of-Convex (DC) networks treat $(M, \boldsymbol{g})$ as unconstrained real arrays, whereas scale convexity requires $\tau \ge 0$ (e.g., via `Softplus` or `exp`), monotone Input-Convex Neural Network (ICNN) priors require $M_{ij} \ge 0$, and shift-equivariance priors enforce row normalization $M \mathbf{u} = c_u \mathbf{1}_K$.
-- **Decision Needed:** Should constrained parameterization helpers live inside `zgraph` (e.g., a `zgraph.nn` module or `FactorNode` option), or belong in downstream training/application packages?
+- **Decision Needed:** Should constrained parameterization helpers live inside `zgraph` (e.g., a `zgraph.nn` module or `ZNode` option), or belong in downstream training/application packages?
 
 ### 4. Multi-Subgraph `Ensemble` Resampling
 - **Files:** `src/zgraph/core/base.py`
-- **Context:** `ZGraphNode._execute_vectorized` applies a single `eqx.filter_vmap` over axis `0` of every `Ensemble` leaf in a DAG, requiring all `Ensemble` leaves to share the same sample count $S$. Combining independently calibrated subgraphs with mismatched sample counts ($S_A \neq S_B$) requires resampling each subgraph's `Ensemble` leaves to a common $S$—reusing the same random index draw within a subgraph to preserve intra-subgraph parameter covariance while drawing independent indices across distinct subgraphs.
-- **Decision Needed:** Should this be an explicit utility `zg.align_ensembles(graph, num_samples=None, key=...)` (defaulting `num_samples` to `max(S_i)`), automatic behavior in `ZGraphNode`, or handled in the application layer?
+- **Context:** `BaseNode._execute_vectorized` applies a single `eqx.filter_vmap` over axis `0` of every `Ensemble` leaf in a DAG, requiring all `Ensemble` leaves to share the same sample count $S$. Combining independently calibrated subgraphs with mismatched sample counts ($S_A \neq S_B$) requires resampling each subgraph's `Ensemble` leaves to a common $S$—reusing the same random index draw within a subgraph to preserve intra-subgraph parameter covariance while drawing independent indices across distinct subgraphs.
+- **Decision Needed:** Should this be an explicit utility `zg.align_ensembles(graph, num_samples=None, key=...)` (defaulting `num_samples` to `max(S_i)`), automatic behavior in `BaseNode`, or handled in the application layer?
 
 ---
 

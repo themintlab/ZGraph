@@ -2,10 +2,10 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 from typing import List, Union
-from .base import ZGraphNode
+from .base import BaseNode
 
 
-class PiecewiseNode(ZGraphNode):
+class PiecewiseNode(BaseNode):
     """
     Utility Node: Evaluates a single subgraph based on a signal's value and a set of transition bounds.
     Used for routing execution mathematically rather than defining structural tropical geometry.
@@ -38,7 +38,7 @@ class PiecewiseNode(ZGraphNode):
         return jax.lax.switch(idx, branches, local_signals)
 
 
-class StandardProductNode(ZGraphNode):
+class StandardProductNode(BaseNode):
     """
     Utility Node: Standard Multiplication.
     Multiplies a list of subgraph outputs elementwise.

@@ -182,7 +182,7 @@ def legendre_solve(
     Supports arbitrary leading batch dimensions on target_state.
 
     Args:
-        model_fn: A ZGraphNode or callable mapping 1D coordinates x -> scalar z^+(x).
+        model_fn: A BaseNode or callable mapping 1D coordinates x -> scalar z^+(x).
         target_state: Input tensor of shape (..., D) containing target marginals n
             at transform_indices and fixed conditioning coordinates elsewhere.
         transform_indices: Sequence of coordinate indices to invert. Defaults to all indices.

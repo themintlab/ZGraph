@@ -41,7 +41,7 @@ $$z^+(\mathbf{z}) = \tau \, \text{LogSumExp}\!\left( \tau^{-1} M \mathbf{z} + \b
 - **ICNN & DC Closure:** Non-negative incidence weights ($M \ge 0$) yield globally monotone **Input-Convex Neural Networks (ICNNs)**; arbitrary real weights ($M = M^+ - M^-$) form **Difference-of-Convex (DC)** networks.
 
 ### 3. Hardware-Native Compilation & Ensemble UQ
-Engine nodes (`FactorNode`, `ProductNode`, `ConstantNode`, `SignalNode`) compile via `jax.jit` into fused XLA kernels with compile-time linear bypass for single-branch ($K = 1$) nodes, horizontal operator fusion (`+`, `-`, `*`, `|`), and automatic `vmap` vectorization across state batches and `Ensemble` parameter distributions.
+Engine nodes (`ZNode`, `ZMatMulNode`, `ProductNode`, `ConstantNode`, `SignalNode`) compile via `jax.jit` into fused XLA kernels with compile-time linear bypass for single-branch ($K = 1$) nodes, horizontal operator fusion (`+`, `-`, `*`, `|`), and automatic `vmap` vectorization across state batches and `Ensemble` parameter distributions.
 
 ### 4. Belief Propagation, Legendre-Fenchel Duality, & Boundary Solvers
 - **Reverse-Mode AD = Exact Belief Propagation:** With simplex branch probabilities $\mathbf{p} = \text{softmax}(\tau^{-1} M \mathbf{z} + \boldsymbol{g}) \in \Delta^{K-1}$, local marginals $\mathbf{n} = \nabla_{\mathbf{z}} z^+ = M^T \mathbf{p}$, and PSD susceptibility $\mathbf{H}_{\mathbf{z}} = \nabla^2_{\mathbf{z}} z^+ \succeq 0$, reverse-mode AD (`jax.grad` / `jax.vjp`) executes exact sum-product belief propagation in one backward sweep.
@@ -72,12 +72,12 @@ subgraphs = [
     zg.SignalNode(0)
 ]
 
-# 3. Instantiate the FactorNode engine with scale tau and optional log-degeneracy g
-factor_node = zg.FactorNode(M_matrix=M_matrix, subgraph_list=subgraphs, tau=1.0)
+# 3. Instantiate the ZNode engine with scale tau and optional log-degeneracy g
+znode = zg.ZNode(M_matrix=M_matrix, subgraph_list=subgraphs, tau=1.0)
 
 # 4. Pure tensor input evaluation
 signals = jnp.array([0.2, 1.0])  # Unlabeled numerical input tensor
-potential = factor_node(signals) # Fully differentiable scalar tensor output
+potential = znode(signals)       # Fully differentiable scalar tensor output
 ```
 
 ## Interactive Examples

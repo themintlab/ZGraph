@@ -2,7 +2,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from zgraph import FactorNode, SignalNodes
+from zgraph import SignalNodes, ZNode
 from zgraph.transforms import legendre_transform
 
 
@@ -10,15 +10,15 @@ def _build_binary_graph():
     r = 8.314
     t, mu1, mu2 = SignalNodes(0, 1, 2)
 
-    rt = FactorNode([[r]], [t])
-    mu1a = FactorNode([2, -1], [rt, mu1])
-    mu2a = FactorNode([-1], [mu2])
-    mu1b = FactorNode([-1], [mu1])
-    mu2b = FactorNode([1, -1], [rt, mu2])
+    rt = ZNode([[r]], [t])
+    mu1a = ZNode([2, -1], [rt, mu1])
+    mu2a = ZNode([-1], [mu2])
+    mu1b = ZNode([-1], [mu1])
+    mu2b = ZNode([1, -1], [rt, mu2])
 
-    phase_a = FactorNode(jnp.eye(2), [mu1a, mu2a], tau=rt)
-    phase_b = FactorNode(jnp.eye(2), [mu1b, mu2b], tau=rt)
-    system = FactorNode(jnp.eye(2), [phase_a, phase_b], tau=0)
+    phase_a = ZNode(jnp.eye(2), [mu1a, mu2a], tau=rt)
+    phase_b = ZNode(jnp.eye(2), [mu1b, mu2b], tau=rt)
+    system = ZNode(jnp.eye(2), [phase_a, phase_b], tau=0)
     return phase_a, phase_b, system
 
 

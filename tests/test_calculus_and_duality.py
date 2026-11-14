@@ -4,13 +4,14 @@ import pytest
 
 import zgraph as zg
 from zgraph import (
+    BaseNode,
     ConstantNode,
-    FactorNode,
     LegendreDualNode,
     LegendreTransform,
     SignalNode,
     SignalNodes,
     TropicalZeroNode,
+    ZNode,
     gauge_fix,
     legendre_dual,
     legendre_solve,
@@ -24,11 +25,12 @@ def test_log_degeneracy_g_parameter():
     g = jnp.array([jnp.log(2.0), jnp.log(3.0)])
     tau = 2.5
 
-    node = FactorNode(M, [z0, z1], tau=tau, g=g)
+    node = ZNode(M, [z0, z1], tau=tau, g=g)
     signals = jnp.array([1.2, -0.4])
 
-    expected_logits = M @ signals + tau * g
-    assert jnp.allclose(node.logits(signals), expected_logits, atol=1e-6)
+    expected_branch_potentials = M @ signals + tau * g
+    assert jnp.allclose(node.branch_potentials(signals), expected_branch_potentials, atol=1e-6)
+    assert jnp.allclose(node.logits(signals), expected_branch_potentials, atol=1e-6)
 
     expected_probs = jax.nn.softmax((M @ signals) / tau + g)
     assert jnp.allclose(node.probabilities(signals), expected_probs, atol=1e-6)
@@ -38,7 +40,7 @@ def test_log_degeneracy_g_parameter():
 
     # Check gradient wrt g: d z^+ / d g = tau * p
     def eval_with_g(g_vec):
-        n = FactorNode(M, [z0, z1], tau=tau, g=g_vec)
+        n = ZNode(M, [z0, z1], tau=tau, g=g_vec)
         return n(signals)
 
     grad_g = jax.grad(eval_with_g)(g)
@@ -51,7 +53,7 @@ def test_zero_scale_limit_value_and_derivatives():
     M = jnp.array([[1.0, 2.0], [3.0, -1.0]])
     g = jnp.array([0.7, -1.3])
 
-    node = FactorNode(M, [z0, z1], tau=tau_sig, g=g)
+    node = ZNode(M, [z0, z1], tau=tau_sig, g=g)
 
     # For z = [1.0, 2.0]: branch 0 is 1 + 4 = 5.0; branch 1 is 3 - 2 = 1.0.
     signals_at_zero = jnp.array([1.0, 2.0, 0.0])
@@ -82,7 +84,7 @@ def test_euler_identity_and_hessian_properties():
     M = jnp.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
     g = jnp.array([0.2, -0.5, 0.1])
 
-    node = FactorNode(M, [z0, z1], tau=tau_sig, g=g)
+    node = ZNode(M, [z0, z1], tau=tau_sig, g=g)
     signals = jnp.array([0.8, -0.3, 1.5])
 
     val = node(signals)
@@ -104,7 +106,7 @@ def test_euler_identity_and_hessian_properties():
 def test_tropical_zero_node_is_true_identity():
     z0 = SignalNode(0)
     zero = TropicalZeroNode()
-    node = FactorNode(jnp.eye(2), [z0, zero], tau=1.5)
+    node = ZNode(jnp.eye(2), [z0, zero], tau=1.5)
 
     x = jnp.array([3.2])
     # LSE([3.2, TROPICAL_ZERO_BARRIER]) == 3.2 regardless of tau
@@ -115,8 +117,8 @@ def test_tropical_zero_node_is_true_identity():
 
 def test_or_operator_preserves_non_unit_tau():
     z0, z1 = SignalNodes(0, 1)
-    phase_a = FactorNode(jnp.eye(2), [z0, z1], tau=2.0)
-    phase_b = FactorNode(jnp.eye(2), [z0, z1], tau=3.0)
+    phase_a = ZNode(jnp.eye(2), [z0, z1], tau=2.0)
+    phase_b = ZNode(jnp.eye(2), [z0, z1], tau=3.0)
 
     combined = phase_a | phase_b
     signals = jnp.array([1.0, -0.5])
@@ -130,13 +132,13 @@ def test_or_operator_preserves_non_unit_tau():
 def test_gauge_fix_handles_arbitrary_directional_gain():
     z0, z1 = SignalNodes(0, 1)
     # Negated chemical potential convention: z^+ = -mu_A => c_u = -1
-    node_neg = FactorNode([[-1.0, 0.0]], [z0, z1], tau=1.0)
+    node_neg = ZNode([[-1.0, 0.0]], [z0, z1], tau=1.0)
     x_init = jnp.array([2.5, -1.0])
     x_proj = gauge_fix(node_neg, x_init, shift_indices=0)
     assert jnp.allclose(node_neg(x_proj), 0.0, atol=1e-6)
 
     # Explicit direction vector u with custom target_val
-    node_weighted = FactorNode([[2.0, -3.0]], [z0, z1], tau=1.0)
+    node_weighted = ZNode([[2.0, -3.0]], [z0, z1], tau=1.0)
     u = jnp.array([0.5, 1.0])
     x_proj_u = gauge_fix(node_weighted, x_init, direction=u, target_val=1.25)
     assert jnp.allclose(node_weighted(x_proj_u), 1.25, atol=1e-6)
@@ -144,15 +146,15 @@ def test_gauge_fix_handles_arbitrary_directional_gain():
 
 def test_legendre_transform_convex_fenchel_sign_and_direct_batching():
     t, mu1, mu2 = SignalNodes(0, 1, 2)
-    rt = FactorNode([[1.0]], [t])
-    phase = FactorNode(
+    rt = ZNode([[1.0]], [t])
+    phase = ZNode(
         jnp.array([[1.0, -1.0, 0.0], [0.0, 0.0, -1.0]]),
         [rt, mu1, mu2],
         tau=rt,
     )
 
     lt = legendre_transform(phase, [1, 2])
-    assert isinstance(lt, zg.ZGraphNode)
+    assert isinstance(lt, BaseNode)
 
     pt = jnp.array([2.0, -1.0, 0.5])
     z_star, x_dual = lt(pt)
@@ -177,9 +179,9 @@ def test_legendre_solve_and_dual_node_with_implicit_gradients():
     # Binary ideal solution with chemical potentials z = [T, mu1, mu2]
     # where z^+ = T * LSE([ (mu1 - g1)/T, (mu2 - g2)/T ])
     t, mu1, mu2 = SignalNodes(0, 1, 2)
-    b1 = FactorNode([-0.5, 1.0], [t, mu1])
-    b2 = FactorNode([0.3, 1.0], [t, mu2])
-    phase = FactorNode(jnp.eye(2), [b1, b2], tau=t)
+    b1 = ZNode([-0.5, 1.0], [t, mu1])
+    b2 = ZNode([0.3, 1.0], [t, mu2])
+    phase = ZNode(jnp.eye(2), [b1, b2], tau=t)
 
     dual_node = legendre_dual(
         phase,
@@ -222,7 +224,7 @@ def test_legendre_solve_and_dual_node_with_implicit_gradients():
 
 def test_save_and_load_roundtrip(tmp_path):
     z0, z1 = SignalNodes(0, 1)
-    node = FactorNode(
+    node = ZNode(
         jnp.array([[1.0, 0.5], [-0.5, 2.0]]),
         [z0, z1],
         tau=1.25,

@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import equinox as eqx
 from typing import Any, Dict, Tuple
 
-from zgraph.core.base import ZGraphNode, Ensemble
+from zgraph.core.base import BaseNode, Ensemble
 
 
 def serialize_tree(root_node: Any) -> Tuple[Dict[str, Any], Dict[str, jax.Array]]:
@@ -132,7 +132,7 @@ def deserialize_tree(topology: Dict[str, Any], tensor_registry: Dict[str, Any]) 
     return skeletons[topology["root"]]
 
 
-def _save_single(tree: ZGraphNode, filepath: str):
+def _save_single(tree: BaseNode, filepath: str):
     if not filepath.endswith(".zg"):
         filepath += ".zg"
 
@@ -172,7 +172,7 @@ def save(tree: Any, filepath: str, library_dir: str = None):
         _save_single(tree, filepath)
 
 
-def load(filepath: str, library_dir: str = None) -> ZGraphNode:
+def load(filepath: str, library_dir: str = None) -> BaseNode:
     """
     Loads a ZGraph PyTree from a .zg hybrid archive.
     """

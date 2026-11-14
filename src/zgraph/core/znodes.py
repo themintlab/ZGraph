@@ -3,14 +3,14 @@ import jax.numpy as jnp
 import equinox as eqx
 from typing import List, Union, Optional
 from . import functional as F
-from .base import ZGraphNode
+from .base import BaseNode
 from .leaf_nodes import ConstantNode
 from .constants import MIN_SAFE_TAU
 
 
-class TropicalPolynomialNode(ZGraphNode):
+class ZNode(BaseNode):
     """
-    Soft-Tropical Sum-Product Node (FactorNode).
+    Fused Soft-Tropical Sum-Product Node.
     Computes the fused soft-tropical operator:
         z^+(z) = tau * LSE(tau^{-1} M z + g)
     combining linear incidence projection (M z) with a degeneracy-shifted,
@@ -81,10 +81,10 @@ class TropicalPolynomialNode(ZGraphNode):
 
         self.subgraphs = list(subgraph_list)
 
-    def logits(self, signals: jax.Array) -> jax.Array:
+    def branch_potentials(self, signals: jax.Array) -> jax.Array:
         """
         Evaluates the uncollapsed degeneracy-shifted branch potentials:
-            z_i^+ + tau * g_i = (M z)_i + tau * g_i
+            zeta_i = (M z)_i + tau * g_i
         """
         z = jnp.stack([subgraph(signals) for subgraph in self.subgraphs], axis=-1)
         branch_z = jnp.matmul(self.M, z)
@@ -93,24 +93,31 @@ class TropicalPolynomialNode(ZGraphNode):
             branch_z = branch_z + tau_val * self.g
         return branch_z
 
+    def logits(self, signals: jax.Array) -> jax.Array:
+        """
+        Alias for branch_potentials(signals), returning uncollapsed branch potentials:
+            zeta_i = (M z)_i + tau * g_i
+        """
+        return self.branch_potentials(signals)
+
     def probabilities(self, signals: jax.Array) -> jax.Array:
         """
         Evaluates the branch softmax probability vector p in Delta^{K-1}:
             p = softmax(tau^{-1} M z + g)
         """
-        branch_z = self.logits(signals)
+        branch_z = self.branch_potentials(signals)
         tau_val = jnp.maximum(self.tau(signals), MIN_SAFE_TAU)
         z_max = jnp.max(branch_z, axis=-1, keepdims=True)
         safe_z_max = jnp.where(jnp.isneginf(z_max), 0.0, z_max)
         return jax.nn.softmax((branch_z - safe_z_max) / tau_val, axis=-1)
 
     def evaluate(self, local_signals: jax.Array) -> jax.Array:
-        branch_z = self.logits(local_signals)
+        branch_z = self.branch_potentials(local_signals)
         tau_val = self.tau(local_signals)
         return F.marginalize(branch_z, tau_val)
 
 
-class TropicalMatMulNode(ZGraphNode):
+class ZMatMulNode(BaseNode):
     """
     Soft-Tropical Matrix Multiplication:
         C_{ij} = ⊕_{tau, k} (A_{ik} ⊗ B_{kj}) = tau * LSE_k((A_{ik} + B_{kj}) / tau)

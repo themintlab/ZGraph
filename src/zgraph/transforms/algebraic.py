@@ -4,14 +4,14 @@ import equinox as eqx
 from jax import value_and_grad
 from jax.tree_util import tree_map
 from typing import List, Optional, Sequence, Tuple, Any, TypeVar
-from zgraph.core.base import ZGraphNode
+from zgraph.core.base import BaseNode
 from zgraph.solvers.dual import legendre_solve
 import zgraph.transforms.functional as F
 
 T = TypeVar("T")
 
 
-class LegendreTransform(ZGraphNode):
+class LegendreTransform(BaseNode):
     """
     Parametric Legendre-Fenchel Transform Node.
     Evaluates a base module at primal coordinates x, returning the convex conjugate
@@ -19,7 +19,7 @@ class LegendreTransform(ZGraphNode):
     transform by degree-1 perspective homogeneity) and the dual coordinate vector
     (with grad_{x_I} z^+(x) placed at transform_indices).
 
-    Inherits from ZGraphNode for automatic multi-dimensional batching and Ensemble UQ.
+    Inherits from BaseNode for automatic multi-dimensional batching and Ensemble UQ.
     """
     base_model: eqx.Module
     idx: jax.Array
@@ -34,7 +34,7 @@ class LegendreTransform(ZGraphNode):
         return psi, dual_coords
 
 
-class LegendreDualNode(ZGraphNode):
+class LegendreDualNode(BaseNode):
     """
     Inverse Legendre-Fenchel Dual Node.
     Takes prescribed target marginals n at transform_indices (and conditioning

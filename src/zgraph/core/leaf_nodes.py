@@ -3,10 +3,10 @@ import jax.numpy as jnp
 import equinox as eqx
 from typing import Union, Any
 from jax.tree_util import tree_map
-from .base import ZGraphNode, Ensemble
+from .base import BaseNode, Ensemble
 
 
-class ConstantNode(ZGraphNode):
+class ConstantNode(BaseNode):
     """The simplest leaf model: a trainable or fixed scalar/tensor constant."""
     value: jax.Array
 
@@ -20,7 +20,7 @@ class ConstantNode(ZGraphNode):
         return self.value
 
 
-class SignalNode(ZGraphNode):
+class SignalNode(BaseNode):
     """A node that extracts a specific signal index from the input vector."""
     signal_index: int = eqx.field(static=True)
 

@@ -7,7 +7,7 @@ class Ensemble(eqx.Module):
     """
     Lightweight wrapper tagging a JAX array as a parameter uncertainty ensemble
     with leading sample dimension S rather than a vector constant.
-    ZGraphNode._execute_vectorized detects Ensemble leaves and vectorizes over S
+    BaseNode._execute_vectorized detects Ensemble leaves and vectorizes over S
     via eqx.filter_vmap / jax.vmap.
     """
     array: jax.Array
@@ -39,7 +39,7 @@ class BatchProxy:
         return proxy_method
 
 
-class ZGraphNode(eqx.Module):
+class BaseNode(eqx.Module):
     """Universal base functor class for all nodes in the ZGraph framework."""
 
     def _execute_vectorized(self, method_name: str, signals: jax.Array, signal_ndim: int = 1, **kwargs):
@@ -92,33 +92,33 @@ class ZGraphNode(eqx.Module):
         return self._execute_vectorized("evaluate", signals, signal_ndim=1, **kwargs)
 
     def evaluate(self, signals, **kwargs):
-        raise NotImplementedError("ZGraphNodes must implement pure scalar math in evaluate.")
+        raise NotImplementedError("BaseNodes must implement pure scalar math in evaluate.")
 
     @property
     def ensemble(self):
         """
         Returns a BatchProxy. Any method called on this proxy will be automatically
         vectorized over the uncertainty ensemble and signal batches.
-        Example: system.ensemble.logits(signals)
+        Example: system.ensemble.branch_potentials(signals)
         """
         return BatchProxy(self)
 
     # --- Operator Overloading (Graph Flattening) ---
-    def _is_1row_tpoly(self):
-        from .tropical_nodes import TropicalPolynomialNode
+    def _is_1row_znode(self):
+        from .znodes import ZNode
         from .leaf_nodes import ConstantNode
         # Determine if this node is a flat linear combination (1-row M matrix with no g bias)
-        if isinstance(self, TropicalPolynomialNode) and self.M.shape[0] == 1 and self.g is None:
+        if isinstance(self, ZNode) and self.M.shape[0] == 1 and self.g is None:
             if isinstance(self.tau, ConstantNode) and self.tau.value == 1.0:
                 return True
         return False
 
-    def _is_unit_identity_tpoly(self):
-        from .tropical_nodes import TropicalPolynomialNode
+    def _is_unit_identity_znode(self):
+        from .znodes import ZNode
         from .leaf_nodes import ConstantNode
         # Determine if this node is an unshifted identity selector with unit scale tau=1.0
         if (
-            isinstance(self, TropicalPolynomialNode)
+            isinstance(self, ZNode)
             and self.g is None
             and isinstance(self.tau, ConstantNode)
             and self.tau.value == 1.0
@@ -129,27 +129,27 @@ class ZGraphNode(eqx.Module):
         return False
 
     def __add__(self, other):
-        from .tropical_nodes import TropicalPolynomialNode
+        from .znodes import ZNode
         from .leaf_nodes import ConstantNode
 
-        self_subgraphs = self.subgraphs if self._is_1row_tpoly() else [self]
-        self_M = self.M[0] if self._is_1row_tpoly() else jnp.asarray([1.0], dtype=float)
+        self_subgraphs = self.subgraphs if self._is_1row_znode() else [self]
+        self_M = self.M[0] if self._is_1row_znode() else jnp.asarray([1.0], dtype=float)
 
-        if isinstance(other, ZGraphNode) and other._is_1row_tpoly():
+        if isinstance(other, BaseNode) and other._is_1row_znode():
             other_subgraphs = other.subgraphs
             other_M = other.M[0]
         elif isinstance(other, (int, float, jax.Array)):
             other_subgraphs = [ConstantNode(other)]
             other_M = jnp.asarray([1.0], dtype=float)
-        elif isinstance(other, ZGraphNode):
+        elif isinstance(other, BaseNode):
             other_subgraphs = [other]
             other_M = jnp.asarray([1.0], dtype=float)
         else:
-            raise TypeError(f"Unsupported operand type for +: 'ZGraphNode' and '{type(other)}'")
+            raise TypeError(f"Unsupported operand type for +: 'BaseNode' and '{type(other)}'")
 
         new_M = jnp.expand_dims(jnp.concatenate([self_M, other_M]), 0)
         new_subgraphs = self_subgraphs + other_subgraphs
-        return TropicalPolynomialNode(M_matrix=new_M, subgraph_list=new_subgraphs)
+        return ZNode(M_matrix=new_M, subgraph_list=new_subgraphs)
 
     def __radd__(self, other):
         if other == 0:
@@ -157,59 +157,59 @@ class ZGraphNode(eqx.Module):
         from .leaf_nodes import ConstantNode
         if isinstance(other, (int, float, jax.Array)):
             return ConstantNode(other).__add__(self)
-        raise TypeError(f"Unsupported operand type for +: '{type(other)}' and 'ZGraphNode'")
+        raise TypeError(f"Unsupported operand type for +: '{type(other)}' and 'BaseNode'")
 
     def __sub__(self, other):
-        from .tropical_nodes import TropicalPolynomialNode
+        from .znodes import ZNode
         from .leaf_nodes import ConstantNode
 
-        self_subgraphs = self.subgraphs if self._is_1row_tpoly() else [self]
-        self_M = self.M[0] if self._is_1row_tpoly() else jnp.asarray([1.0], dtype=float)
+        self_subgraphs = self.subgraphs if self._is_1row_znode() else [self]
+        self_M = self.M[0] if self._is_1row_znode() else jnp.asarray([1.0], dtype=float)
 
-        if isinstance(other, ZGraphNode) and other._is_1row_tpoly():
+        if isinstance(other, BaseNode) and other._is_1row_znode():
             other_subgraphs = other.subgraphs
             other_M = -other.M[0]
         elif isinstance(other, (int, float, jax.Array)):
             other_subgraphs = [ConstantNode(other)]
             other_M = jnp.asarray([-1.0], dtype=float)
-        elif isinstance(other, ZGraphNode):
+        elif isinstance(other, BaseNode):
             other_subgraphs = [other]
             other_M = jnp.asarray([-1.0], dtype=float)
         else:
-            raise TypeError(f"Unsupported operand type for -: 'ZGraphNode' and '{type(other)}'")
+            raise TypeError(f"Unsupported operand type for -: 'BaseNode' and '{type(other)}'")
 
         new_M = jnp.expand_dims(jnp.concatenate([self_M, other_M]), 0)
         new_subgraphs = self_subgraphs + other_subgraphs
-        return TropicalPolynomialNode(M_matrix=new_M, subgraph_list=new_subgraphs)
+        return ZNode(M_matrix=new_M, subgraph_list=new_subgraphs)
 
     def __rsub__(self, other):
         from .leaf_nodes import ConstantNode
         if isinstance(other, (int, float, jax.Array)):
             return ConstantNode(other).__sub__(self)
-        raise TypeError(f"Unsupported operand type for -: '{type(other)}' and 'ZGraphNode'")
+        raise TypeError(f"Unsupported operand type for -: '{type(other)}' and 'BaseNode'")
 
     def __mul__(self, other):
-        from .tropical_nodes import TropicalPolynomialNode
+        from .znodes import ZNode
         if isinstance(other, (int, float, jax.Array)):
             scalar = other if (isinstance(other, jax.Array) and jnp.issubdtype(other.dtype, jnp.floating)) else jnp.asarray(other, dtype=float)
-            if self._is_1row_tpoly():
+            if self._is_1row_znode():
                 new_M = self.M * scalar
-                return TropicalPolynomialNode(M_matrix=new_M, subgraph_list=self.subgraphs)
+                return ZNode(M_matrix=new_M, subgraph_list=self.subgraphs)
             else:
-                return TropicalPolynomialNode(M_matrix=jnp.reshape(scalar, (1, 1)), subgraph_list=[self])
-        raise TypeError(f"Unsupported operand type for *: 'ZGraphNode' and '{type(other)}'")
+                return ZNode(M_matrix=jnp.reshape(scalar, (1, 1)), subgraph_list=[self])
+        raise TypeError(f"Unsupported operand type for *: 'BaseNode' and '{type(other)}'")
 
     def __rmul__(self, other):
         return self.__mul__(other)
 
     def __or__(self, other):
         """Soft-Tropical Addition (LogSumExp selector with M = I)."""
-        from .tropical_nodes import TropicalPolynomialNode
-        if not isinstance(other, ZGraphNode):
-            raise TypeError(f"Unsupported operand type for |: 'ZGraphNode' and '{type(other)}'")
+        from .znodes import ZNode
+        if not isinstance(other, BaseNode):
+            raise TypeError(f"Unsupported operand type for |: 'BaseNode' and '{type(other)}'")
 
-        self_subgraphs = self.subgraphs if self._is_unit_identity_tpoly() else [self]
-        other_subgraphs = other.subgraphs if other._is_unit_identity_tpoly() else [other]
+        self_subgraphs = self.subgraphs if self._is_unit_identity_znode() else [self]
+        other_subgraphs = other.subgraphs if other._is_unit_identity_znode() else [other]
 
         new_subgraphs = self_subgraphs + other_subgraphs
-        return TropicalPolynomialNode(M_matrix=None, subgraph_list=new_subgraphs)
+        return ZNode(M_matrix=None, subgraph_list=new_subgraphs)

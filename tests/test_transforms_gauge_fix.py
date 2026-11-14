@@ -1,13 +1,13 @@
 import jax
 import jax.numpy as jnp
 
-from zgraph import FactorNode, SignalNodes
+from zgraph import SignalNodes, ZNode
 from zgraph.solvers import gauge_fix
 
 
 def _build_simple_graph():
     x0, x1 = SignalNodes(0, 1)
-    return FactorNode([[1.0, 2.0]], [x0, x1], tau=1.0)
+    return ZNode([[1.0, 2.0]], [x0, x1], tau=1.0)
 
 
 def test_gauge_fix_solves_properly():
